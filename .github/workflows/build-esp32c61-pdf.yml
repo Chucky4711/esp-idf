@@ -24,9 +24,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            doxygen graphviz cmake ninja-build poppler-utils \
-            latexmk texlive-xetex texlive-latex-recommended \
-            texlive-latex-extra texlive-fonts-recommended \
+            doxygen graphviz cmake ninja-build \
+            latexmk texlive-xetex \
+            texlive-latex-recommended \
+            texlive-latex-extra \
+            texlive-fonts-recommended \
+            texlive-lang-chinese \
             fonts-freefont-otf fonts-lmodern
 
       - name: Setup Python
