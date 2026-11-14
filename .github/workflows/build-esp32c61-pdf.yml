@@ -86,7 +86,10 @@ jobs:
           test "$(kpsewhich -var-value=pool_size)" -eq 30000000
           . ./export.sh
           cd docs
-          build-docs -bs latex -t esp32c61 -l en
+          # Preserve both stdout and stderr for the entire Sphinx + latexmk run.
+          # pipefail keeps the actual build exit code even when tee succeeds.
+          set -o pipefail
+          build-docs -bs latex -t esp32c61 -l en 2>&1 | tee "$GITHUB_WORKSPACE/pdf-build-full.log"
 
       # Save an already generated PDF even if a later LaTeX pass fails.
       # This does not mark the build successful; logs remain available.
@@ -114,32 +117,42 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Diagnose LaTeX failure
+      - name: Diagnose Sphinx and Latexmk failure
         if: failure()
         shell: bash
         run: |
-          echo '=== LaTeX log files ==='
-          find docs/_build/en/esp32c61/latex -type f \( -name '*.log' -o -name '*.fls' -o -name '*.tex' -o -name '*.fdb_latexmk' \) -print | head -50 || true
-          LOG=$(find docs/_build/en/esp32c61/latex -type f -name 'esp-idf-en-v6.1.1-esp32c61.log' -print -quit)
-          if [ -n "$LOG" ]; then
-            echo "=== Last 180 lines of $LOG ==="
-            tail -n 180 "$LOG"
-            echo '=== Potential LaTeX errors ==='
-            grep -n -E '^!|^l\.[0-9]+|LaTeX Error|Emergency stop|Fatal error|not found|Missing|Undefined control sequence|cannot find' "$LOG" | tail -n 80 || true
-          else
-            echo 'The expected LaTeX log is missing; listing build directory:'
-            ls -lah docs/_build/en/esp32c61/latex/ || true
-            ls -lah docs/_build/en/esp32c61/latex/build/ || true
+          echo '=== Last 250 lines of complete build console output ==='
+          if [ -f pdf-build-full.log ]; then
+            tail -n 250 pdf-build-full.log
           fi
+          echo '=== Important errors throughout console output ==='
+          if [ -f pdf-build-full.log ]; then
+            grep -nEi '(^! |fatal|emergency stop|capacity exceeded|error:|latexmk:|undefined control sequence|no pages of output|failed)' pdf-build-full.log | tail -n 150 || true
+          fi
+          echo '=== Latexmk database and logs ==='
+          find docs/_build/en/esp32c61/latex -type f \
+            \( -name '*.log' -o -name '*.fdb_latexmk' -o -name '*.fls' \) -printf '%p (%s bytes)\n' | tail -n 50 || true
+          while IFS= read -r -d '' log; do
+            echo "=== Tail of $log ==="
+            tail -n 100 "$log"
+            echo "=== First TeX error in $log (if present) ==="
+            grep -n -m 5 -E '^! |^l\.[0-9]+|Emergency stop|Fatal error|TeX capacity exceeded' "$log" || true
+          done < <(find docs/_build/en/esp32c61/latex -type f -name '*.log' -print0 2>/dev/null)
 
-      - name: Upload diagnostic logs on failure
-        if: failure()
+      - name: Upload full diagnostics even after failure
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ESP32C61-PDF-Diagnostics
+          name: ESP32C61-PDF-Full-Diagnostics
           path: |
+            pdf-build-full.log
             docs/_build/en/esp32c61/latex/**/*.log
-            docs/_build/en/esp32c61/latex/**/*.tex
+            docs/_build/en/esp32c61/latex/**/*.fdb_latexmk
+            docs/_build/en/esp32c61/latex/**/*.fls
+            docs/_build/en/esp32c61/latex/**/*.aux
+            docs/_build/en/esp32c61/latex/**/*.out
+            docs/_build/en/esp32c61/latex/**/*.toc
+            docs/_build/en/esp32c61/latex/latexmkrc
             docs/_build/en/esp32c61/sphinx-build-output-latex.txt
             docs/_build/en/esp32c61/sphinx-warning-log.txt
           if-no-files-found: warn
