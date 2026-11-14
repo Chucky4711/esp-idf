@@ -88,6 +88,32 @@ jobs:
           cd docs
           build-docs -bs latex -t esp32c61 -l en
 
+      # Save an already generated PDF even if a later LaTeX pass fails.
+      # This does not mark the build successful; logs remain available.
+      - name: Check for generated PDF (also after failure)
+        if: always()
+        shell: bash
+        run: |
+          PDF_DIR="docs/_build/en/esp32c61/latex/build"
+          echo "Checking ${PDF_DIR}"
+          if [ -d "$PDF_DIR" ]; then
+            find "$PDF_DIR" -maxdepth 1 -type f -name '*.pdf' -printf '%f (%s bytes)\n'
+            while IFS= read -r -d '' file; do
+              pdfinfo "$file" | grep -E '^(Pages|Page size|File size):' || true
+            done < <(find "$PDF_DIR" -maxdepth 1 -type f -name '*.pdf' -size +0c -print0)
+          else
+            echo "No LaTeX build directory found"
+          fi
+
+      - name: Upload existing PDF even if LaTeX build fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ESP-IDF-v6.1.1-ESP32C61-PDF-first-pass
+          path: docs/_build/en/esp32c61/latex/build/*.pdf
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Diagnose LaTeX failure
         if: failure()
         shell: bash
