@@ -1,6 +1,4 @@
 
-    
-  
 name: Build ESP32-C61 PDF (ESP-IDF v6.1.1)
 
 on:
@@ -15,7 +13,7 @@ jobs:
     timeout-minutes: 120
 
     steps:
-      - name: Check out official ESP-IDF v6.1.1, including submodules
+      - name: Checkout ESP-IDF v6.1.1
         uses: actions/checkout@v4
         with:
           repository: espressif/esp-idf
@@ -23,53 +21,51 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      - name: Install operating-system and LaTeX dependencies
+      - name: Install LaTeX and system dependencies
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
             doxygen graphviz cmake ninja-build \
-            latexmk texlive-xetex texlive-latex-recommended \
-            texlive-latex-extra texlive-fonts-recommended \
+            latexmk texlive-xetex \
+            texlive-latex-recommended \
+            texlive-latex-extra \
+            texlive-fonts-recommended \
             fonts-freefont-otf fonts-lmodern
 
-      - name: Set up Python on GitHub runner
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: pip
-          cache-dependency-path: tools/requirements/requirements.docs.txt
 
-      - name: Install Espressif documentation tools
+      - name: Install complete ESP-IDF environment
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r tools/requirements/requirements.docs.txt
+          ./install.sh esp32c61 --enable-docs
 
-      - name: Build English ESP32-C61 PDF from Sphinx / LaTeX
-        env:
-          IDF_PATH: ${{ github.workspace }}
-        working-directory: docs
-        run: build-docs -bs latex -t esp32c61 -l en
-
-      - name: Show resulting PDF files
-        if: always()
-        run: find docs/_build -type f -name '*.pdf' -printf '%p (%s bytes)\n' || true
-
-      - name: Verify a PDF exists
+      - name: Build ESP32-C61 PDF
+        shell: bash
         run: |
-          mapfile -t pdfs < <(find docs/_build/en/esp32c61/latex -type f -name '*.pdf')
-          if [ "${#pdfs[@]}" -eq 0 ]; then
-            echo 'ERROR: No PDF was generated.' >&2
+          . ./export.sh
+          cd docs
+          build-docs -bs latex -t esp32c61 -l en
+
+      - name: Verify generated PDFs
+        shell: bash
+        run: |
+          find docs/_build/en/esp32c61/latex \
+            -type f -name '*.pdf' -print
+
+          count=$(find docs/_build/en/esp32c61/latex \
+            -type f -name '*.pdf' -size +0c | wc -l)
+
+          if [ "$count" -eq 0 ]; then
+            echo "ERROR: No valid PDF generated"
             exit 1
           fi
-          for file in "${pdfs[@]}"; do
-            test -s "$file" || exit 1
-          done
 
-      - name: Upload PDF for download
+      - name: Upload PDF files
         uses: actions/upload-artifact@v4
         with:
-          name: ESP-IDF-v6.1.1-ESP32C61-English-PDF
+          name: ESP-IDF-v6.1.1-ESP32C61-PDF
           path: docs/_build/en/esp32c61/latex/**/*.pdf
           if-no-files-found: error
           retention-days: 7
-
