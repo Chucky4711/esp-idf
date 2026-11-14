@@ -1,3 +1,67 @@
+name: Build ESP32-C61 PDF (ESP-IDF v6.1.1)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pdf:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout official ESP-IDF v6.1.1
+        uses: actions/checkout@v4
+        with:
+          repository: espressif/esp-idf
+          ref: v6.1.1
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Install LaTeX and system dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            doxygen graphviz cmake ninja-build poppler-utils \
+            latexmk texlive-xetex texlive-latex-recommended \
+            texlive-latex-extra texlive-fonts-recommended \
+            fonts-freefont-otf fonts-lmodern
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install complete ESP-IDF environment
+        run: ./install.sh esp32c61 --enable-docs
+
+      - name: Setup Node.js for Mermaid diagrams
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install and test Mermaid CLI
+        shell: bash
+        run: |
+          npm install --global @mermaid-js/mermaid-cli
+          cat > docs/puppeteer-config.json <<'EOF_PUPPETEER'
+          {"args": ["--no-sandbox"]}
+          EOF_PUPPETEER
+          mmdc --version
+          printf 'flowchart TD\n  A[Start] --> B[End]\n' > /tmp/test-mermaid.mmd
+          mmdc -p "$PWD/docs/puppeteer-config.json" \
+            -i /tmp/test-mermaid.mmd -o /tmp/test-mermaid.svg
+          test -s /tmp/test-mermaid.svg
+
+      - name: Configure PDF metadata and Mermaid renderer
+        shell: bash
+        run: |
+          cat >> docs/en/conf.py <<'EOF_PDF'
+
+          # Settings for the ESP-IDF v6.1.1 GitHub Actions PDF build
+          pdf_title = 'ESP-IDF Programming Guide'
           pdf_file_prefix = 'esp-idf'
 
           import os as _pdf_os
