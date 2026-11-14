@@ -1,3 +1,6 @@
+
+    
+  
 name: Build ESP32-C61 PDF (ESP-IDF v6.1.1)
 
 on:
@@ -9,7 +12,7 @@ permissions:
 jobs:
   pdf:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 180
 
     steps:
       - name: Checkout official ESP-IDF v6.1.1
@@ -24,11 +27,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            doxygen graphviz cmake ninja-build \
-            latexmk texlive-xetex \
-            texlive-latex-recommended \
-            texlive-latex-extra \
-            texlive-fonts-recommended \
+            doxygen graphviz cmake ninja-build poppler-utils \
+            latexmk texlive-xetex texlive-latex-recommended \
+            texlive-latex-extra texlive-fonts-recommended \
             fonts-freefont-otf fonts-lmodern
 
       - name: Setup Python
@@ -37,16 +38,42 @@ jobs:
           python-version: '3.11'
 
       - name: Install complete ESP-IDF environment
-        run: |
-          ./install.sh esp32c61 --enable-docs
+        run: ./install.sh esp32c61 --enable-docs
 
-      - name: Configure PDF metadata
+      - name: Setup Node.js for Mermaid diagrams
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install and test Mermaid CLI
+        shell: bash
+        run: |
+          npm install --global @mermaid-js/mermaid-cli
+          cat > docs/puppeteer-config.json <<'EOF_PUPPETEER'
+          {"args": ["--no-sandbox"]}
+          EOF_PUPPETEER
+          mmdc --version
+          printf 'flowchart TD\n  A[Start] --> B[End]\n' > /tmp/test-mermaid.mmd
+          mmdc -p "$PWD/docs/puppeteer-config.json" \
+            -i /tmp/test-mermaid.mmd -o /tmp/test-mermaid.svg
+          test -s /tmp/test-mermaid.svg
+
+      - name: Configure PDF metadata and Mermaid renderer
+        shell: bash
         run: |
           cat >> docs/en/conf.py <<'EOF_PDF'
 
-          # Required by esp-docs LaTeX builder
+          # Settings for the ESP-IDF v6.1.1 GitHub Actions PDF build
           pdf_title = 'ESP-IDF Programming Guide'
           pdf_file_prefix = 'esp-idf'
+
+          import os as _pdf_os
+          mermaid_params = [
+              '-p',
+              _pdf_os.path.abspath(
+                  _pdf_os.path.join(_pdf_os.path.dirname(__file__), '..', 'puppeteer-config.json')
+              ),
+          ]
           EOF_PDF
 
       - name: Build ESP32-C61 PDF
@@ -59,7 +86,8 @@ jobs:
       - name: Verify generated PDF
         shell: bash
         run: |
-          mapfile -d '' pdfs < <(find docs/_build/en/esp32c61/latex -type f -name '*.pdf' -size +0c -print0)
+          mapfile -d '' pdfs < <(find docs/_build/en/esp32c61/latex \
+            -type f -name '*.pdf' -size +0c -print0)
           if [ "${#pdfs[@]}" -eq 0 ]; then
             echo 'ERROR: No nonempty PDF generated.' >&2
             exit 1
@@ -69,10 +97,11 @@ jobs:
             echo "Verified PDF: $pdf"
           done
 
-      - name: Upload generated PDF
+      - name: Upload generated PDFs
         uses: actions/upload-artifact@v4
         with:
           name: ESP-IDF-v6.1.1-ESP32C61-English-PDF
           path: docs/_build/en/esp32c61/latex/**/*.pdf
           if-no-files-found: error
           retention-days: 7
+
