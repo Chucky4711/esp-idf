@@ -1,4 +1,3 @@
-
 name: Build ESP32-C61 PDF (ESP-IDF v6.1.1)
 
 on:
@@ -13,7 +12,7 @@ jobs:
     timeout-minutes: 120
 
     steps:
-      - name: Checkout ESP-IDF v6.1.1
+      - name: Checkout official ESP-IDF v6.1.1
         uses: actions/checkout@v4
         with:
           repository: espressif/esp-idf
@@ -41,6 +40,15 @@ jobs:
         run: |
           ./install.sh esp32c61 --enable-docs
 
+      - name: Configure PDF metadata
+        run: |
+          cat >> docs/en/conf.py <<'EOF_PDF'
+
+          # Required by esp-docs LaTeX builder
+          pdf_title = 'ESP-IDF Programming Guide'
+          pdf_file_prefix = 'esp-idf'
+          EOF_PDF
+
       - name: Build ESP32-C61 PDF
         shell: bash
         run: |
@@ -48,24 +56,23 @@ jobs:
           cd docs
           build-docs -bs latex -t esp32c61 -l en
 
-      - name: Verify generated PDFs
+      - name: Verify generated PDF
         shell: bash
         run: |
-          find docs/_build/en/esp32c61/latex \
-            -type f -name '*.pdf' -print
-
-          count=$(find docs/_build/en/esp32c61/latex \
-            -type f -name '*.pdf' -size +0c | wc -l)
-
-          if [ "$count" -eq 0 ]; then
-            echo "ERROR: No valid PDF generated"
+          mapfile -d '' pdfs < <(find docs/_build/en/esp32c61/latex -type f -name '*.pdf' -size +0c -print0)
+          if [ "${#pdfs[@]}" -eq 0 ]; then
+            echo 'ERROR: No nonempty PDF generated.' >&2
             exit 1
           fi
+          for pdf in "${pdfs[@]}"; do
+            pdfinfo "$pdf" | grep -E '^(Pages|Page size|File size):'
+            echo "Verified PDF: $pdf"
+          done
 
-      - name: Upload PDF files
+      - name: Upload generated PDF
         uses: actions/upload-artifact@v4
         with:
-          name: ESP-IDF-v6.1.1-ESP32C61-PDF
+          name: ESP-IDF-v6.1.1-ESP32C61-English-PDF
           path: docs/_build/en/esp32c61/latex/**/*.pdf
           if-no-files-found: error
           retention-days: 7
