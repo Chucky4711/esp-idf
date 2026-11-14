@@ -24,11 +24,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            doxygen graphviz cmake ninja-build \
-            latexmk texlive-xetex \
-            texlive-latex-recommended \
-            texlive-latex-extra \
-            texlive-fonts-recommended \
+            doxygen graphviz cmake ninja-build poppler-utils \
+            latexmk texlive-xetex texlive-latex-recommended \
+            texlive-latex-extra texlive-fonts-recommended \
             texlive-lang-chinese \
             fonts-freefont-otf fonts-lmodern
 
@@ -78,7 +76,14 @@ jobs:
 
       - name: Build ESP32-C61 PDF
         shell: bash
+        env:
+          # ESP-IDF has exceptionally large LaTeX auxiliary files.
+          # Overrides TeX Live's default string pool (the previous run
+          # failed at its ~5.8 million-character limit).
+          pool_size: "30000000"
         run: |
+          echo "Effective XeTeX pool_size: $(kpsewhich -var-value=pool_size)"
+          test "$(kpsewhich -var-value=pool_size)" -eq 30000000
           . ./export.sh
           cd docs
           build-docs -bs latex -t esp32c61 -l en
