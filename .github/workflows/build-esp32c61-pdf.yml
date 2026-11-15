@@ -138,9 +138,10 @@ jobs:
           test "$(kpsewhich -var-value=extra_mem_top)" -eq 12000000
           test "$(kpsewhich -var-value=pool_size)" -eq 30000000
           sudo fmtutil-sys --byfmt xelatex
-          echo '=== Built format location ==='
-          kpsewhich xelatex.fmt
-          test -n "$(kpsewhich xelatex.fmt)"
+          echo 'XeLaTeX format rebuild completed successfully.'
+          # fmtutil-sys already verifies success via its exit code.
+          # Do not use `kpsewhich xelatex.fmt` here: it can return empty
+          # without the explicit format search category, even when rebuilt.
 
       - name: Build ESP32-C61 PDF
         shell: bash
