@@ -117,15 +117,41 @@ jobs:
           rm -rf "$TEST_DIR"
           echo 'MakeIndex preflight test passed.'
 
+      # XeLaTeX exhausted its main memory when reading the large hyperref
+      # bookmark (.out) file. main_memory requires rebuilding the .fmt file.
+      # extra_mem_top supplements runtime memory without a format rebuild.
+      - name: Increase XeLaTeX memory and rebuild format
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            'main_memory = 7000000' \
+            'extra_mem_top = 12000000' \
+            'pool_size = 30000000' \
+            | sudo tee /etc/texmf/texmf.d/99-esp-idf-pdf.cnf
+          sudo update-texmf
+          echo '=== Effective TeX memory configuration ==='
+          for key in main_memory extra_mem_top pool_size; do
+            printf '%s = %s\n' "$key" "$(kpsewhich -var-value="$key")"
+          done
+          test "$(kpsewhich -var-value=main_memory)" -eq 7000000
+          test "$(kpsewhich -var-value=extra_mem_top)" -eq 12000000
+          test "$(kpsewhich -var-value=pool_size)" -eq 30000000
+          sudo fmtutil-sys --byfmt xelatex
+          echo '=== Built format location ==='
+          kpsewhich xelatex.fmt
+          test -n "$(kpsewhich xelatex.fmt)"
+
       - name: Build ESP32-C61 PDF
         shell: bash
         env:
           # ESP-IDF has exceptionally large LaTeX auxiliary files.
-          # Overrides TeX Live's default string pool (the previous run
-          # failed at its ~5.8 million-character limit).
+          # Keep the enlarged string pool for the Sphinx/LaTeX build.
           pool_size: "30000000"
         run: |
           echo "Effective XeTeX pool_size: $(kpsewhich -var-value=pool_size)"
+          echo "Effective XeTeX main_memory: $(kpsewhich -var-value=main_memory)"
+          echo "Effective XeTeX extra_mem_top: $(kpsewhich -var-value=extra_mem_top)"
           test "$(kpsewhich -var-value=pool_size)" -eq 30000000
           . ./export.sh
           cd docs
