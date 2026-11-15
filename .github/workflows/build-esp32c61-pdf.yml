@@ -74,6 +74,36 @@ jobs:
           ]
           EOF_PDF
 
+      # Sphinx's latexmkrc refers to python.ist by a relative filename.
+      # In the Espressif build the style is not in makeindex's search path.
+      - name: Fix and test Sphinx MakeIndex style path
+        shell: bash
+        run: |
+          . ./export.sh
+          python - <<'PY_FIX_INDEX'
+          from pathlib import Path
+          import sphinx
+
+          texinputs = Path(sphinx.__file__).resolve().parent / 'texinputs'
+          template = texinputs / 'latexmkrc_t'
+          style = texinputs / 'python.ist'
+          assert template.is_file(), f'Missing Sphinx latexmk template: {template}'
+          assert style.is_file(), f'Missing Sphinx MakeIndex style: {style}'
+          contents = template.read_text(encoding='utf-8')
+          old = 'makeindex -s python.ist'
+          assert old in contents, f'Expected MakeIndex command not found in {template}'
+          contents = contents.replace(old, 'makeindex -s ' + str(style))
+          template.write_text(contents, encoding='utf-8')
+          print(f'MakeIndex style resolved to: {style}')
+          print('Patched Sphinx latexmkrc template:', template)
+          PY_FIX_INDEX
+          # Fail early instead of discovering the missing style after 3000+ pages.
+          STYLE=$(python -c 'from pathlib import Path; import sphinx; print(Path(sphinx.__file__).resolve().parent / "texinputs" / "python.ist")')
+          printf '\\indexentry{makeindex-test}{1}\n' > /tmp/sphinx-index-test.idx
+          makeindex -s "$STYLE" -o /tmp/sphinx-index-test.ind /tmp/sphinx-index-test.idx
+          test -s /tmp/sphinx-index-test.ind
+          echo 'MakeIndex preflight test passed.'
+
       - name: Build ESP32-C61 PDF
         shell: bash
         env:
@@ -152,6 +182,8 @@ jobs:
             docs/_build/en/esp32c61/latex/**/*.aux
             docs/_build/en/esp32c61/latex/**/*.out
             docs/_build/en/esp32c61/latex/**/*.toc
+            docs/_build/en/esp32c61/latex/**/*.ilg
+            docs/_build/en/esp32c61/latex/**/*.ind
             docs/_build/en/esp32c61/latex/latexmkrc
             docs/_build/en/esp32c61/sphinx-build-output-latex.txt
             docs/_build/en/esp32c61/sphinx-warning-log.txt
