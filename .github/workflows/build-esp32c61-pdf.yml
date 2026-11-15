@@ -93,9 +93,15 @@ jobs:
           old = 'makeindex -s python.ist'
           assert old in contents, f'Expected MakeIndex command not found in {template}'
           contents = contents.replace(old, 'makeindex -s ' + str(style))
+          # Latexmk's usual five passes were insufficient for this huge document.
+          # Add the setting to the generated latexmkrc template, not a separate
+          # rc file which latexmk might not load in the same directory.
+          if '$max_repeat' not in contents:
+              contents += '\n$max_repeat = 12;\n'
           template.write_text(contents, encoding='utf-8')
           print(f'MakeIndex style resolved to: {style}')
           print('Patched Sphinx latexmkrc template:', template)
+          print('Latexmk max_repeat: 12')
           PY_FIX_INDEX
           # Fail early instead of discovering the missing style after 3000+ pages.
           STYLE=$(python -c 'from pathlib import Path; import sphinx; print(Path(sphinx.__file__).resolve().parent / "texinputs" / "python.ist")')
@@ -166,6 +172,8 @@ jobs:
           if [ -f pdf-build-full.log ]; then
             grep -nEi '(^! |fatal|emergency stop|capacity exceeded|error:|latexmk:|undefined control sequence|no pages of output|failed)' pdf-build-full.log | tail -n 150 || true
           fi
+          echo '=== Latexmk settings ==='
+          cat docs/_build/en/esp32c61/latex/latexmkrc 2>/dev/null || true
           echo '=== Latexmk database and logs ==='
           find docs/_build/en/esp32c61/latex -type f \
             \( -name '*.log' -o -name '*.fdb_latexmk' -o -name '*.fls' \) -printf '%p (%s bytes)\n' | tail -n 50 || true
