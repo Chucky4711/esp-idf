@@ -1,4 +1,4 @@
-name: Build ESP32-C61 PDF (ESP-IDF v6.1.1)
+name: Build all ESP-IDF v6.1 PDFs (11 targets)
 
 on:
   workflow_dispatch:
@@ -8,15 +8,32 @@ permissions:
 
 jobs:
   pdf:
+    name: PDF - ${{ matrix.target }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        target:
+          - esp32
+          - esp32s2
+          - esp32s3
+          - esp32s31
+          - esp32c2
+          - esp32c3
+          - esp32c5
+          - esp32c6
+          - esp32c61
+          - esp32h2
+          - esp32p4
 
     steps:
-      - name: Checkout official ESP-IDF v6.1.1
+      - name: Checkout official ESP-IDF v6.1
         uses: actions/checkout@v4
         with:
           repository: espressif/esp-idf
-          ref: v6.1.1
+          ref: v6.1
           submodules: recursive
           fetch-depth: 1
 
@@ -36,7 +53,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install complete ESP-IDF environment
-        run: ./install.sh esp32c61 --enable-docs
+        run: ./install.sh "${{ matrix.target }}" --enable-docs
 
       - name: Setup Node.js for Mermaid diagrams
         uses: actions/setup-node@v4
@@ -61,7 +78,7 @@ jobs:
         run: |
           cat >> docs/en/conf.py <<'EOF_PDF'
 
-          # Settings for the ESP-IDF v6.1.1 GitHub Actions PDF build
+          # Settings for the ESP-IDF v6.1 GitHub Actions PDF build
           pdf_title = 'ESP-IDF Programming Guide'
           pdf_file_prefix = 'esp-idf'
 
@@ -143,7 +160,7 @@ jobs:
           # Do not use `kpsewhich xelatex.fmt` here: it can return empty
           # without the explicit format search category, even when rebuilt.
 
-      - name: Build ESP32-C61 PDF
+      - name: Build ${{ matrix.target }} PDF
         shell: bash
         env:
           # ESP-IDF has exceptionally large LaTeX auxiliary files.
@@ -159,7 +176,7 @@ jobs:
           # Preserve both stdout and stderr for the entire Sphinx + latexmk run.
           # pipefail keeps the actual build exit code even when tee succeeds.
           set -o pipefail
-          build-docs -bs latex -t esp32c61 -l en 2>&1 | tee "$GITHUB_WORKSPACE/pdf-build-full.log"
+          build-docs -bs latex -t ${{ matrix.target }} -l en 2>&1 | tee "$GITHUB_WORKSPACE/pdf-build-full.log"
 
       # Save an already generated PDF even if a later LaTeX pass fails.
       # This does not mark the build successful; logs remain available.
@@ -167,7 +184,7 @@ jobs:
         if: always()
         shell: bash
         run: |
-          PDF_DIR="docs/_build/en/esp32c61/latex/build"
+          PDF_DIR="docs/_build/en/${{ matrix.target }}/latex/build"
           echo "Checking ${PDF_DIR}"
           if [ -d "$PDF_DIR" ]; then
             find "$PDF_DIR" -maxdepth 1 -type f -name '*.pdf' -printf '%f (%s bytes)\n'
@@ -182,8 +199,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ESP-IDF-v6.1.1-ESP32C61-PDF-first-pass
-          path: docs/_build/en/esp32c61/latex/build/*.pdf
+          name: ESP-IDF-v6.1-${{ matrix.target }}-PDF-first-pass
+          path: docs/_build/en/${{ matrix.target }}/latex/build/*.pdf
           if-no-files-found: warn
           retention-days: 7
 
@@ -200,42 +217,42 @@ jobs:
             grep -nEi '(^! |fatal|emergency stop|capacity exceeded|error:|latexmk:|undefined control sequence|no pages of output|failed)' pdf-build-full.log | tail -n 150 || true
           fi
           echo '=== Latexmk settings ==='
-          cat docs/_build/en/esp32c61/latex/latexmkrc 2>/dev/null || true
+          cat docs/_build/en/${{ matrix.target }}/latex/latexmkrc 2>/dev/null || true
           echo '=== Latexmk database and logs ==='
-          find docs/_build/en/esp32c61/latex -type f \
+          find docs/_build/en/${{ matrix.target }}/latex -type f \
             \( -name '*.log' -o -name '*.fdb_latexmk' -o -name '*.fls' \) -printf '%p (%s bytes)\n' | tail -n 50 || true
           while IFS= read -r -d '' log; do
             echo "=== Tail of $log ==="
             tail -n 100 "$log"
             echo "=== First TeX error in $log (if present) ==="
             grep -n -m 5 -E '^! |^l\.[0-9]+|Emergency stop|Fatal error|TeX capacity exceeded' "$log" || true
-          done < <(find docs/_build/en/esp32c61/latex -type f -name '*.log' -print0 2>/dev/null)
+          done < <(find docs/_build/en/${{ matrix.target }}/latex -type f -name '*.log' -print0 2>/dev/null)
 
       - name: Upload full diagnostics even after failure
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ESP32C61-PDF-Full-Diagnostics
+          name: ${{ matrix.target }}-PDF-Full-Diagnostics
           path: |
             pdf-build-full.log
-            docs/_build/en/esp32c61/latex/**/*.log
-            docs/_build/en/esp32c61/latex/**/*.fdb_latexmk
-            docs/_build/en/esp32c61/latex/**/*.fls
-            docs/_build/en/esp32c61/latex/**/*.aux
-            docs/_build/en/esp32c61/latex/**/*.out
-            docs/_build/en/esp32c61/latex/**/*.toc
-            docs/_build/en/esp32c61/latex/**/*.ilg
-            docs/_build/en/esp32c61/latex/**/*.ind
-            docs/_build/en/esp32c61/latex/latexmkrc
-            docs/_build/en/esp32c61/sphinx-build-output-latex.txt
-            docs/_build/en/esp32c61/sphinx-warning-log.txt
+            docs/_build/en/${{ matrix.target }}/latex/**/*.log
+            docs/_build/en/${{ matrix.target }}/latex/**/*.fdb_latexmk
+            docs/_build/en/${{ matrix.target }}/latex/**/*.fls
+            docs/_build/en/${{ matrix.target }}/latex/**/*.aux
+            docs/_build/en/${{ matrix.target }}/latex/**/*.out
+            docs/_build/en/${{ matrix.target }}/latex/**/*.toc
+            docs/_build/en/${{ matrix.target }}/latex/**/*.ilg
+            docs/_build/en/${{ matrix.target }}/latex/**/*.ind
+            docs/_build/en/${{ matrix.target }}/latex/latexmkrc
+            docs/_build/en/${{ matrix.target }}/sphinx-build-output-latex.txt
+            docs/_build/en/${{ matrix.target }}/sphinx-warning-log.txt
           if-no-files-found: warn
           retention-days: 7
 
       - name: Verify generated PDF
         shell: bash
         run: |
-          mapfile -d '' pdfs < <(find docs/_build/en/esp32c61/latex \
+          mapfile -d '' pdfs < <(find docs/_build/en/${{ matrix.target }}/latex \
             -type f -name '*.pdf' -size +0c -print0)
           if [ "${#pdfs[@]}" -eq 0 ]; then
             echo 'ERROR: No nonempty PDF generated.' >&2
@@ -249,7 +266,7 @@ jobs:
       - name: Upload generated PDFs
         uses: actions/upload-artifact@v4
         with:
-          name: ESP-IDF-v6.1.1-ESP32C61-English-PDF
-          path: docs/_build/en/esp32c61/latex/**/*.pdf
+          name: ESP-IDF-v6.1-${{ matrix.target }}-English-PDF
+          path: docs/_build/en/${{ matrix.target }}/latex/**/*.pdf
           if-no-files-found: error
           retention-days: 7
