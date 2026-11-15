@@ -99,9 +99,16 @@ jobs:
           PY_FIX_INDEX
           # Fail early instead of discovering the missing style after 3000+ pages.
           STYLE=$(python -c 'from pathlib import Path; import sphinx; print(Path(sphinx.__file__).resolve().parent / "texinputs" / "python.ist")')
-          printf '\\indexentry{makeindex-test}{1}\n' > /tmp/sphinx-index-test.idx
-          makeindex -s "$STYLE" -o /tmp/sphinx-index-test.ind /tmp/sphinx-index-test.idx
-          test -s /tmp/sphinx-index-test.ind
+          # openout_any=p prohibits absolute output paths for makeindex.
+          # Use relative filenames from inside a temporary directory.
+          TEST_DIR="$(mktemp -d)"
+          (
+            cd "$TEST_DIR"
+            printf '\indexentry{makeindex-test}{1}\n' > sphinx-index-test.idx
+            makeindex -s "$STYLE" -o sphinx-index-test.ind sphinx-index-test.idx
+            test -s sphinx-index-test.ind
+          )
+          rm -rf "$TEST_DIR"
           echo 'MakeIndex preflight test passed.'
 
       - name: Build ESP32-C61 PDF
