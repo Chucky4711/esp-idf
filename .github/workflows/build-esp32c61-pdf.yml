@@ -41,7 +41,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            doxygen graphviz cmake ninja-build poppler-utils \
+            doxygen graphviz cmake ninja-build poppler-utils librsvg2-bin \
             latexmk texlive-xetex texlive-latex-recommended \
             texlive-latex-extra texlive-fonts-recommended \
             texlive-lang-chinese \
@@ -54,6 +54,41 @@ jobs:
 
       - name: Install complete ESP-IDF environment
         run: ./install.sh "${{ matrix.target }}" --enable-docs
+
+      # Keep all original SVG files. Retry only a failed CairoSVG conversion
+      # using librsvg (alternative renderer for the very same input file).
+      - name: Add SVG converter fallback without editing documentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          . ./export.sh
+          python - <<'PY_SVG_FALLBACK'
+          import inspect
+          from pathlib import Path
+          import sphinxcontrib.cairosvgconverter as converter
+
+          module_file = Path(inspect.getfile(converter.CairoSVGConverter))
+          original = module_file.read_text(encoding='utf-8')
+          anchor = '        except (OSError, URLError) as err:'
+          assert original.count(anchor) == 1, f'Unexpected converter code in {module_file}'
+          fallback = (
+              '        except ValueError as err:\n'
+              '            import subprocess\n'
+              '            logger.info("CairoSVG failed for %s: %s; retrying with librsvg", _from, err)\n'
+              '            subprocess.run(\n'
+              '                ["rsvg-convert", "--format=pdf", "--output", str(_to), str(_from)],\n'
+              '                check=True,\n'
+              '            )\n'
+          )
+          patched = original.replace(anchor, fallback + anchor)
+          compile(patched, str(module_file), 'exec')
+          module_file.write_text(patched, encoding='utf-8')
+          print('SVG fallback installed in:', module_file)
+          PY_SVG_FALLBACK
+          command -v rsvg-convert
+          printf '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="lightblue"/></svg>\n' > /tmp/test-svg-converter.svg
+          rsvg-convert --format=pdf --output=/tmp/test-svg-converter.pdf /tmp/test-svg-converter.svg
+          pdfinfo /tmp/test-svg-converter.pdf | grep '^Pages:'
 
       - name: Setup Node.js for Mermaid diagrams
         uses: actions/setup-node@v4
