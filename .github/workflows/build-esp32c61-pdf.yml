@@ -195,6 +195,31 @@ jobs:
           # Do not use `kpsewhich xelatex.fmt` here: it can return empty
           # without the explicit format search category, even when rebuilt.
 
+      # In the upstream TWAI documentation, underscores inside \text{...}
+      # aren't escaped. XeLaTeX therefore aborts on the timing formulas.
+      # Apply the smallest possible LaTeX-only correction in this temporary
+      # checkout. The published repository and original diagrams stay intact.
+      - name: Fix TWAI LaTeX math syntax for PDF build
+        shell: bash
+        run: |
+          python - <<'PY_FIX_TWAI'
+          from pathlib import Path
+
+          source = Path('docs/en/api-reference/peripherals/twai.rst')
+          original = source.read_text(encoding='utf-8')
+          replacements = {
+              r'\text{prop_seg}': r'\text{prop\_seg}',
+              r'\text{sample_point}': r'\text{sample\_point}',
+          }
+          for old, new in replacements.items():
+              count = original.count(old)
+              if count == 0:
+                  raise RuntimeError(f'Expected TWAI math expression not found: {old}')
+              print(f'Correcting {count} occurrence(s) of {old} in {source}')
+              original = original.replace(old, new)
+          source.write_text(original, encoding='utf-8')
+          PY_FIX_TWAI
+
       - name: Build ${{ matrix.target }} PDF
         shell: bash
         env:
